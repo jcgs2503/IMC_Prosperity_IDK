@@ -32,13 +32,13 @@ class Logger:
 
 logger = Logger()
 
+pastData = {}
+
 
 class Trader:
 
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
-
         result = {}
-
         for product in state.order_depths.keys():
 
             curr_pos = 0
@@ -99,15 +99,19 @@ class Trader:
                 order_depth: OrderDepth = state.order_depths[product]
                 orders: list[Order] = []
 
-                k1 = 2  # default spread size
+                # CURRENT BEST
+                k1 = 3  # default spread size
 
                 q_s = sum(order_depth.sell_orders.values())
                 q_b = sum(order_depth.buy_orders.values())
 
                 avg_s = sum([order_depth.sell_orders[key] *
-                            key for key in order_depth.sell_orders.keys()])/sum(order_depth.sell_orders.values())
+                            key for key in order_depth.sell_orders.keys()])/sum(order_dept.sell_orders.values())
                 avg_b = sum([order_depth.buy_orders[key] *
                             key for key in order_depth.buy_orders.keys()])/sum(order_depth.buy_orders.values())
+
+                # TEST
+                # k1 = (avg_s-avg_b)*0.9
 
                 # average bid/ask method
                 p_t = (avg_s+avg_b)/2
@@ -139,6 +143,9 @@ class Trader:
                 #     bid_price = p_t - k1/2
                 #     ask_price = p_t + k1/2
 
+                bid_price = p_t - k1/2
+                ask_price = p_t + k1/2
+
                 orders.append(Order(product, bid_price, LIMIT - curr_pos))
                 orders.append(Order(product, ask_price, -curr_pos - LIMIT))
 
@@ -167,27 +174,3 @@ class Trader:
                     else:
                         result[product][idx] = Order(
                             product, order.price, math.ceil(order.quantity*limit/abs(sum + curr_pos)))
-
-    def __print_result(self, result):
-        for product in result.keys():
-            for order in result[product]:
-                if order.quantity > 0:
-                    print(f"BUY {product} {order.quantity} @ {order.price}")
-                elif order.quantity < 0:
-                    print(f"SELL {product} {-order.quantity} @ {order.price}")
-
-    def __print_own_trades(self, own_trades):
-        for key in own_trades.keys():
-            for idx, trade in enumerate(own_trades[key]):
-                if idx == 0:
-                    if trade.buyer == "SUBMISSION":
-                        print(f"{key} : BUY {trade.quantity} @ {trade.price}")
-                    if trade.seller == "SUBMISSION":
-                        print(f"{key} : SELL {trade.quantity} @ {trade.price}")
-                else:
-                    if trade.buyer == "SUBMISSION":
-                        print(
-                            f"{trade.timestamp} {key} : BUY {trade.quantity} @ {trade.price}")
-                    if trade.seller == "SUBMISSION":
-                        print(
-                            f"{trade.timestamp} {key} : SELL {trade.quantity} @ {trade.price}")
