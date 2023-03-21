@@ -20,14 +20,18 @@ class Trader:
                 order_depth: OrderDepth = state.order_depths[product]
                 orders: list[Order] = []
                 acceptable_price = 10_000
+                buy_sum = 0
+                sell_sum = 0
                 if len(order_depth.sell_orders) > 0:
                     asks = list(order_depth.sell_orders.keys())
                     asks.sort()
                     for ask in asks:
                         if ask < acceptable_price:
                             volume = -order_depth.sell_orders[ask]
+                            buy_sum += volume
                             if volume + curr_pos > LIMIT:
                                 volume = LIMIT - curr_pos
+                                buy_sum = 20
                             if volume != 0:
                                 orders.append(Order(product, ask, volume))
 
@@ -37,12 +41,26 @@ class Trader:
                     for bid in bids:
                         if bid > acceptable_price:
                             volume = -order_depth.buy_orders[bid]
+                            sell_sum -= volume
                             if volume + curr_pos < -LIMIT:
                                 volume = -LIMIT - curr_pos
+                                sell_sum = 20
                             if volume != 0:
                                 orders.append(Order(product, bid, volume))
+                spread = 2
+                if len(order_depth.sell_orders) > 0 and len(order_depth.buy_orders) > 0:
+                    asks = list(order_depth.sell_orders.keys())
+                    asks.sort()
+                    bids = list(order_depth.buy_orders.keys())
+                    bids.sort(reverse=True)
+                    spread = (asks[0]-bids[0])/2
 
-                result[product] = orders
+                if (buy_sum < LIMIT):
+                    orders.append(
+                        Order(product, acceptable_price-spread/2, LIMIT-buy_sum))
+                if (sell_sum < LIMIT)
+                result[product] = orders.append(
+                    Order(product, acceptable_price+spread/2, sell_sum-LIMIT))
 
             # if product == 'BANANAS':
             #     LIMIT = 20
