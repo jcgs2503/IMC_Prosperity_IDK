@@ -55,13 +55,14 @@ class Trader:
                     bids.sort(reverse=True)
                     spread = (asks[0]-bids[0])/2
 
-                if (buy_sum < LIMIT):
+                if buy_sum < LIMIT:
                     orders.append(
                         Order(product, acceptable_price-spread/2, LIMIT-buy_sum))
-                if (sell_sum < LIMIT)
-                result[product] = orders.append(
-                    Order(product, acceptable_price+spread/2, sell_sum-LIMIT))
+                if sell_sum < LIMIT:
+                    orders.append(
+                        Order(product, acceptable_price+spread/2, sell_sum-LIMIT))
 
+                result[product] = orders
             # if product == 'BANANAS':
             #     LIMIT = 20
             #     order_depth: OrderDepth = state.order_depths[product]
