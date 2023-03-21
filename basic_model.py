@@ -2,6 +2,8 @@ from typing import Dict, List
 from datamodel import OrderDepth, TradingState, Order
 import math
 
+# https://bz97lt8b1e.execute-api.eu-west-1.amazonaws.com/prod/results/tutorial/<algorithm id>
+
 
 class Trader:
 
@@ -27,27 +29,28 @@ class Trader:
                     asks.sort()
                     for ask in asks:
                         if ask < acceptable_price:
-                            volume = -order_depth.sell_orders[ask]
-                            buy_sum += volume
-                            if volume + curr_pos > LIMIT:
-                                volume = LIMIT - curr_pos
-                                buy_sum = 20
-                            if volume != 0:
+                            volume = abs(order_depth.sell_orders[ask])
+                            if buy_sum + curr_pos + volume > LIMIT:
+                                volume = LIMIT - curr_pos - buy_sum
+                            if volume > 0:
+                                buy_sum = buy_sum + volume
                                 orders.append(Order(product, ask, volume))
 
-                if len(order_depth.buy_orders) != 0:
+                if len(order_depth.buy_orders) > 0:
                     bids = list(order_depth.buy_orders.keys())
                     bids.sort(reverse=True)
                     for bid in bids:
                         if bid > acceptable_price:
-                            volume = -order_depth.buy_orders[bid]
-                            sell_sum -= volume
-                            if volume + curr_pos < -LIMIT:
-                                volume = -LIMIT - curr_pos
-                                sell_sum = 20
-                            if volume != 0:
+                            volume = -abs(order_depth.buy_orders[bid])
+                            if volume + curr_pos + sell_sum < -LIMIT:
+                                volume = -LIMIT - curr_pos - sell_sum
+                            if volume < 0:
+                                if volume + sell_sum + curr_pos < -LIMIT:
+                                    raise RuntimeError()
+                                sell_sum = sell_sum + volume
                                 orders.append(Order(product, bid, volume))
-                spread = 2
+                spread = 3
+
                 if len(order_depth.sell_orders) > 0 and len(order_depth.buy_orders) > 0:
                     asks = list(order_depth.sell_orders.keys())
                     asks.sort()
@@ -55,13 +58,12 @@ class Trader:
                     bids.sort(reverse=True)
                     spread = (asks[0]-bids[0])/2
 
-                if buy_sum < LIMIT:
+                if buy_sum + curr_pos < LIMIT:
                     orders.append(
-                        Order(product, acceptable_price-spread/2, LIMIT-buy_sum))
-                if sell_sum < LIMIT:
+                        Order(product, acceptable_price-spread/2, LIMIT-curr_pos-buy_sum))
+                if sell_sum + curr_pos > -LIMIT:
                     orders.append(
-                        Order(product, acceptable_price+spread/2, sell_sum-LIMIT))
-
+                        Order(product, acceptable_price+spread/2, -sell_sum-LIMIT-curr_pos))
                 result[product] = orders
             # if product == 'BANANAS':
             #     LIMIT = 20
@@ -95,7 +97,8 @@ class Trader:
 
             #     result[product] = orders
         # self.__filter(state, result)
-        self.__print_result(result)
+        # self.__print_result(result)
+        # self.__print_own_trades(state.own_trades)
         return result
 
     def __filter(self, state: TradingState, result: Dict[str, List[Order]], limit=20):
@@ -124,3 +127,19 @@ class Trader:
                     print(f"BUY {product} {order.quantity} @ {order.price}")
                 elif order.quantity < 0:
                     print(f"SELL {product} {-order.quantity} @ {order.price}")
+
+    def __print_own_trades(self, own_trades):
+        for key in own_trades.keys():
+            for idx, trade in enumerate(own_trades[key]):
+                if idx == 0:
+                    if trade.buyer == "SUBMISSION":
+                        print(f"{key} : BUY {trade.quantity} @ {trade.price}")
+                    if trade.seller == "SUBMISSION":
+                        print(f"{key} : SELL {trade.quantity} @ {trade.price}")
+                else:
+                    if trade.buyer == "SUBMISSION":
+                        print(
+                            f"{trade.timestamp} {key} : BUY {trade.quantity} @ {trade.price}")
+                    if trade.seller == "SUBMISSION":
+                        print(
+                            f"{trade.timestamp} {key} : SELL {trade.quantity} @ {trade.price}")

@@ -5,7 +5,6 @@ import statistics
 import math
 
 class Trader:
-
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         products = self.__availableProducts(state.order_depths)
 
@@ -83,7 +82,7 @@ class Trader:
         bids = []
 
         for price in order_depth.sell_orders.keys():
-            for i in range(order_depth.sell_orders[price]):
+            for i in range(int(order_depth.sell_orders[price])):
                 asks.append(price)
 
         for price in order_depth.buy_orders.keys():
