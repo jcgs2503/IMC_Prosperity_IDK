@@ -1,5 +1,5 @@
 from typing import Dict, List
-from datamodel import Order, ProsperityEncoder, TradingState, Symbol, OrderDepth
+from datamodel import Order, ProsperityEncoder, TradingState, Symbol, OrderDepth, Product
 import math
 import json
 import numpy as np
@@ -41,9 +41,6 @@ class Trader:
                      'COCONUTS': {'buy_price': [], 'sell_price': [], 'avg_buy_price': 0, 'avg_sell_price': 0, 'mid_price': []},
                      'PINA_COLADAS': {'buy_price': [], 'sell_price': [], 'avg_buy_price': 0, 'avg_sell_price': 0, 'mid_price': []}}
         self.T = 1_000_000
-        self.pearlsSpread = 6
-        self.sigmasq = 2.5
-        self.coconut_sigmasq = 1
 
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         result = {}
@@ -67,38 +64,19 @@ class Trader:
                                 self.data[product]['avg_sell_price']*(-curr_pos) + trade.price*trade.quantity)/((-curr_pos)+trade.quantity)
 
             if product == 'PEARLS':
+
                 LIMIT = 20
-                order_depth: OrderDepth = state.order_depths[product]
                 orders: list[Order] = []
                 acceptable_price = 10_000
                 buy_sum = 0
                 sell_sum = 0
 
-                if len(order_depth.sell_orders) > 0:
-                    asks = list(order_depth.sell_orders.keys())
-                    asks.sort()
-                    for ask in asks:
-                        if ask <= acceptable_price:
-                            volume = abs(order_depth.sell_orders[ask])
-                            if buy_sum + curr_pos + volume > LIMIT:
-                                volume = LIMIT - curr_pos - buy_sum
-                            if volume > 0:
-                                buy_sum = buy_sum + volume
-                                orders.append(Order(product, ask, volume))
+                self.__buy_if_under_fair(
+                    state, product, orders, acceptable_price, LIMIT, curr_pos, buy_sum)
+                self.__sell_if_over_fair(
+                    state, product, orders, acceptable_price, LIMIT, curr_pos, sell_sum)
 
-                if len(order_depth.buy_orders) > 0:
-                    bids = list(order_depth.buy_orders.keys())
-                    bids.sort(reverse=True)
-                    for bid in bids:
-                        if bid >= acceptable_price:
-                            volume = -abs(order_depth.buy_orders[bid])
-                            if volume + curr_pos + sell_sum < -LIMIT:
-                                volume = -LIMIT - curr_pos - sell_sum
-                            if volume < 0:
-                                sell_sum = sell_sum + volume
-                                orders.append(Order(product, bid, volume))
                 spread = 6
-
                 if buy_sum + curr_pos < LIMIT:
                     orders.append(
                         Order(product, acceptable_price-spread/2, LIMIT-curr_pos-buy_sum))
@@ -111,32 +89,20 @@ class Trader:
             if product == 'BANANAS':
 
                 LIMIT = 20
+                orders: list[Order] = []
+                sigmasq = 2.5
                 buy_sum = 0
                 sell_sum = 0
 
-                order_depth: OrderDepth = state.order_depths[product]
-                orders: list[Order] = []
-
-                avg_s = sum([order_depth.sell_orders[key] *
-                            key for key in order_depth.sell_orders.keys()])/sum(order_depth.sell_orders.values())
-                avg_b = sum([order_depth.buy_orders[key] *
-                            key for key in order_depth.buy_orders.keys()])/sum(order_depth.buy_orders.values())
+                avg_s = self.__avg_sell(state, product)
+                avg_b = self.__avg_buy(state, product)
 
                 r = (avg_s+avg_b)/2 - (curr_pos/20) * \
-                    self.sigmasq*(self.T-t)/self.T
-                delta = self.sigmasq*(self.T-t)/self.T + 2*np.log(4)
+                    sigmasq*(self.T-t)/self.T
+                spread = sigmasq*(self.T-t)/self.T + 2*np.log(4)
 
-                # INVENTORY CONTROL => current best
-                # p_t = (avg_s+avg_b)/2
-                # self.past_data[product]['bid_ask_avg'].append(p_t)
-                # p_t = p_t - curr_pos * (k1/40)
-                # bid_price = p_t - k1/2
-                # ask_price = p_t + k1/2
-                # orders.append(Order(product, bid_price, LIMIT - curr_pos))
-                # orders.append(Order(product, ask_price, -curr_pos - LIMIT))
-
-                bid_price = r-delta/2
-                ask_price = r+delta/2
+                bid_price = r-spread/2
+                ask_price = r+spread/2
 
                 orders.append(
                     Order(product, bid_price, LIMIT-curr_pos-buy_sum))
@@ -146,68 +112,25 @@ class Trader:
                 result[product] = orders
 
             if product == 'COCONUTS':
+
+                LIMIT = 600
                 vol_time = 100
                 std_cap = 3.8
-                LIMIT = 600
-
                 buy_sum = 0
                 sell_sum = 0
 
-                order_depth: OrderDepth = state.order_depths[product]
                 orders: list[Order] = []
 
-                # avg_s = sum([order_depth.sell_orders[key] *
-                #             key for key in order_depth.sell_orders.keys()])/sum(order_depth.sell_orders.values())
-                # avg_b = sum([order_depth.buy_orders[key] *
-                #             key for key in order_depth.buy_orders.keys()])/sum(order_depth.buy_orders.values())
-                # avg_order = (avg_b + avg_s)/2
-
-                best_s = min(order_depth.sell_orders.keys())
-                best_b = max(order_depth.buy_orders.keys())
-                mid_price = (best_s + best_b)/2
-
+                mid_price = self.__mid_price(state, product)
                 self.data[product]['mid_price'].append(mid_price)
 
                 biased_mid_price = mid_price - 0.48410
-                delta = 1.9
-
-                # if len(self.data[product]['mid_price']) > fit:
-                #     # m, b = np.polyfit(
-                #     #     range(0, fit), self.data[product]['mid_price'][-fit:], 1)
-                #     # predicted = m*fit + b
-                #     mean = np.mean(self.data[product]['mid_price'][-fit:])
-
-                #     if len(order_depth.sell_orders) > 0:
-                #         asks = list(order_depth.sell_orders.keys())
-                #         asks.sort()
-                #         for ask in asks:
-                #             if ask < mean:
-                #                 volume = abs(order_depth.sell_orders[ask])
-                #                 if buy_sum + curr_pos + volume > LIMIT:
-                #                     volume = LIMIT - curr_pos - buy_sum
-                #                 if volume > 0:
-                #                     buy_sum = buy_sum + volume
-                #                     orders.append(Order(product, ask, volume))
-
-                #     if len(order_depth.buy_orders) > 0:
-                #         bids = list(order_depth.buy_orders.keys())
-                #         bids.sort(reverse=True)
-                #         for bid in bids:
-                #             if bid > mean:
-                #                 volume = -abs(order_depth.buy_orders[bid])
-                #                 if volume + curr_pos + sell_sum < -LIMIT:
-                #                     volume = -LIMIT - curr_pos - sell_sum
-                #                 if volume < 0:
-                #                     sell_sum = sell_sum + volume
-                #                     orders.append(Order(product, bid, volume))
-
+                spread = 1.9
                 r = biased_mid_price - (curr_pos/LIMIT)*3
 
-                bid_price = r-delta/2
-                ask_price = r+delta/2
+                bid_price = r-spread/2
+                ask_price = r+spread/2
 
-                # self.__clear_position(
-                #     product, curr_pos, orders, order_depth.buy_orders, order_depth.sell_orders, delta)
                 if len(self.data[product]['mid_price']) > vol_time:
                     std = np.std(self.data[product]['mid_price'][:-vol_time])
                 else:
@@ -220,6 +143,7 @@ class Trader:
                         Order(product, bid_price, LIMIT-curr_pos-buy_sum))
                     orders.append(
                         Order(product, ask_price, -sell_sum-LIMIT-curr_pos))
+
                 result[product] = orders
 
             if product == 'PINA_COLADAS':
@@ -227,18 +151,9 @@ class Trader:
                 std_cap = 9.5
                 LIMIT = 300
 
-                order_depth: OrderDepth = state.order_depths[product]
                 orders: list[Order] = []
 
-                avg_s = sum([order_depth.sell_orders[key] *
-                            key for key in order_depth.sell_orders.keys()])/sum(order_depth.sell_orders.values())
-                avg_b = sum([order_depth.buy_orders[key] *
-                            key for key in order_depth.buy_orders.keys()])/sum(order_depth.buy_orders.values())
-                avg_order = (avg_b + avg_s)/2
-
-                best_s = min(order_depth.sell_orders.keys())
-                best_b = max(order_depth.buy_orders.keys())
-                mid_price = (best_s + best_b)/2
+                mid_price = self.__mid_price(state, product)
 
                 biased_mid_price = mid_price - 0.516026
                 delta = 1
@@ -293,8 +208,53 @@ class Trader:
                                                 abs(sell_orders[price])))
                             sum += abs(sell_orders[price])
 
-    # def __regime_filter(self, product_name, )
+    def __avg_sell(self, state: TradingState, product_name: Product):
+        order_depth: OrderDepth = state.order_depths[product_name]
+        return sum([order_depth.sell_orders[key] *
+                    key for key in order_depth.sell_orders.keys()])/sum(order_depth.sell_orders.values())
 
-    # self.__filter(state, result)
-    # self.__print_result(result)
-    # self.__print_own_trades(state.own_trades)
+    def __avg_buy(self, state: TradingState, product_name: Product):
+        order_depth: OrderDepth = state.order_depths[product_name]
+        return sum([order_depth.buy_orders[key] *
+                    key for key in order_depth.buy_orders.keys()])/sum(order_depth.buy_orders.values())
+
+    def __best_sell(self, state: TradingState, product_name: Product):
+        order_depth: OrderDepth = state.order_depths[product_name]
+        return min(order_depth.sell_orders.keys())
+
+    def __best_buy(self, state: TradingState, product_name: Product):
+        order_depth: OrderDepth = state.order_depths[product_name]
+        return max(order_depth.buy_orders.keys())
+
+    def __mid_price(self, state: TradingState, product_name: Product):
+        return (self.__best_buy(state, product_name) + self.__best_sell(state, product_name)) / 2
+
+    def __buy_if_under_fair(self, state: TradingState, product_name: Product, orders: List[Order], acceptable_price: float, LIMIT: int, curr_pos: int, buy_sum: int):
+        order_depth: OrderDepth = state.order_depths[product_name]
+        if len(order_depth.sell_orders) > 0:
+            asks = list(order_depth.sell_orders.keys())
+            asks.sort()
+            for ask in asks:
+                if ask <= acceptable_price:
+                    volume = abs(order_depth.sell_orders[ask])
+                    if buy_sum + curr_pos + volume > LIMIT:
+                        volume = LIMIT - curr_pos - buy_sum
+                    if volume > 0:
+                        buy_sum = buy_sum + volume
+                        orders.append(Order(product_name, ask, volume))
+        return
+
+    def __sell_if_over_fair(self, state: TradingState, product_name: Product, orders: List[Order], acceptable_price: float, LIMIT: int, curr_pos: int, sell_sum: int):
+        order_depth: OrderDepth = state.order_depths[product_name]
+        if len(order_depth.buy_orders) > 0:
+            bids = list(order_depth.buy_orders.keys())
+            bids.sort(reverse=True)
+            for bid in bids:
+                if bid >= acceptable_price:
+                    volume = -abs(order_depth.buy_orders[bid])
+                    if volume + curr_pos + sell_sum < -LIMIT:
+                        volume = -LIMIT - curr_pos - sell_sum
+                    if volume < 0:
+                        sell_sum = sell_sum + volume
+                        orders.append(Order(product_name, bid, volume))
+        return
